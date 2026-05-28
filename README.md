@@ -28,7 +28,7 @@ Watch_dogs_projet/
 
 ## Installation : 
 
-git clone https://github.com/Julien-hub0309/Watch_dogs_projet.git
+https://github.com/Julien-hub0309/Watch_Fox_projet.git
 
 cd Watch_dogs_projet
 
