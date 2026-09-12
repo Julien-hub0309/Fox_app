@@ -70,6 +70,12 @@ pip install psutil
 
 pip install scapy
 
+pip install opencv-python
+
+pip install "qrcode[pil]" 
+
+pip install pyzbar
+
 ### Termux : 
 
 pkg update && pkg upgrade
