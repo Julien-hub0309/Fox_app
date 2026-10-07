@@ -1,0 +1,10 @@
+requests
+rich
+psutil
+Pillow
+hachoir
+pytsk3
+scapy
+dnspython
+phonenumbers
+beautifulsoup4
