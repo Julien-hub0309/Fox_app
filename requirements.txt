@@ -1,5 +1,6 @@
 requests
 rich
+textual
 psutil
 Pillow
 hachoir
@@ -8,3 +9,6 @@ scapy
 dnspython
 phonenumbers
 beautifulsoup4
+pyserial
+esptool
+bleak
