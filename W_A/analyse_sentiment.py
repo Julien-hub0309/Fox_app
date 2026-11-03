@@ -1,27 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Analyseur de sentiments, émotions, sarcasme et sous-entendus (français)
-
-Usage :
-    python analyse_sentiment.py "Votre texte ici"
-    python analyse_sentiment.py -f message.txt --sentences
-    python analyse_sentiment.py -f messages.txt --batch --json > resultats.json
-    echo "Super, encore en retard..." | python analyse_sentiment.py --ml
-
-Options :
-    -f, --file       lire le texte depuis un fichier
-    --batch          une analyse par ligne (avec -f ou stdin)
-    --sentences      détail phrase par phrase + trajectoire émotionnelle
-    --ml             active les modèles transformers (sentiment, émotions,
-                     ironie, sous-entendus) – pip install transformers torch
-    --json           sortie JSON (exploitable par d'autres programmes)
-
-Le moteur « règles » fonctionne sans aucune dépendance. Il gère notamment :
-négations ("pas mal"), intensificateurs ("très", "un peu"), concessions
-("bon mais cher"), MAJUSCULES, émojis, ironie, litotes, reproches, etc.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -47,6 +23,17 @@ def norm(s: str) -> str:
     """Minuscule, sans accents, apostrophes normalisées."""
     s = s.lower().replace("’", "'").replace("œ", "oe").replace("æ", "ae")
     return strip_accents(s)
+
+
+ELONGATION_RE = re.compile(r"([a-z])\1{2,}")
+
+
+def compress_elongation(tok: str) -> str:
+    """'trooop' -> 'trop', 'nooon' -> 'non' : réduit les lettres répétées
+    (3+ fois) à une seule occurrence, pour retrouver la forme lexicale d'un
+    mot étiré à l'écrit informel, sans perdre l'information d'emphase
+    (celle-ci est captée séparément par detect_sarcasm/analyze_tone)."""
+    return ELONGATION_RE.sub(r"\1", tok)
 
 
 TOKEN_RE = re.compile(r"[a-z]+")
@@ -116,6 +103,43 @@ LEXICON = _build({
     "degoute|degoutant|degoutante": -3, "ecoeure": -3, "trahi|trahie": -3,
     "seul|seule": -1.5, "abandonne|abandonnee": -2.5, "blesse|blessee": -2.5,
     "mepris": -3, "arnaque": -3, "marre": -2.5, "galere": -2,
+    # ── ajouts : positifs (registre pro/quotidien/relationnel) ──
+    "exceptionnel|exceptionnelle": 3, "remarquable": 2.5, "impeccable": 2.5,
+    "irreprochable": 2.5, "soigne|soignee": 1.5, "pro|professionnel|professionnelle": 1.5,
+    "reactif|reactive": 1.5, "disponible": 1.2, "attentionne|attentionnee": 2,
+    "bienveillant|bienveillante": 2, "genereux|genereuse": 2, "chaleureux|chaleureuse": 2,
+    "accueillant|accueillante": 1.8, "patient|patiente": 1.3, "competent|competente": 1.8,
+    "qualite": 1.5, "solide": 1.3, "fiable": 1.8, "durable": 1.3, "stable": 1.2,
+    "progres": 1.5, "amelioration|ameliore|amelioree": 1.5, "epanoui|epanouie": 2.5,
+    "serein|sereine": 1.8, "apaise|apaisee": 1.8, "detendu|detendue": 1.5,
+    "motive|motivee": 1.8, "inspire|inspiree": 2, "passionnant|passionnante": 2.2,
+    "captivant|captivante": 2, "enrichissant|enrichissante": 2, "utile|precieux|precieuse": 1.8,
+    "nickel|impec": 2,
+    "classe": 1.5, "style|stylee": 1.5, "puissant|puissante": 1.3,
+    "innovant|innovante": 1.5, "prometteur|prometteuse": 1.5, "harmonieux|harmonieuse": 1.8,
+    "complice|complicite": 1.8, "tendresse": 2, "gratitude": 2.2, "soulagement": 1.8,
+    "epanouissement": 2.2, "bienvenue": 1.2, "chapeau": 2.2,
+    # ── ajouts : négatifs (registre pro/quotidien/relationnel) ──
+    "incompetent|incompetente": -2.5, "amateur|amateurisme": -2, "bacle|baclee": -2.5,
+    "defaillant|defaillante": -2, "defectueux|defectueuse": -2, "casse|cassee": -1.8,
+    "indisponible": -1.3, "impoli|impolie": -2.2, "irrespectueux|irrespectueuse": -2.5,
+    "meprisant|meprisante": -2.8, "hautain|hautaine": -2, "arrogant|arrogante": -2.2,
+    "malhonnete": -2.8, "menteur|menteuse|mensonge": -2.5, "manipulateur|manipulatrice": -2.8,
+    "toxique": -2.5, "epuisant|epuisante": -2, "harcelement|harcele|harcelee": -3,
+    "abus|abusif|abusive": -2.8, "violent|violente|violence": -2.8, "agressif|agressive": -2.5,
+    "insultant|insultante|insulte": -2.5, "humiliant|humiliante|humilie|humiliee": -3,
+    "rabaisse|rabaissee": -2.5, "ignore|ignoree": -2, "neglige|negligee": -2,
+    "dépassé|depasse|depassee": -1.5, "obsolete": -1.3, "demode|demodee": -1,
+    "instable": -1.5, "chaotique": -2, "anarchique": -2, "bordel|bordelique": -2,
+    "gaspillage|gaspille|gaspillee": -1.8, "inutile": -1.8,
+    "incomprehensible": -1.8, "confus|confuse": -1.3, "flou|floue": -1,
+    "insatisfait|insatisfaite|insatisfaction": -2.2, "mecontent|mecontente": -2,
+    "scandaleux|scandaleuse|scandale": -2.8, "honteux|honteuse": -2.5,
+    "effroyable|epouvantable": -3, "cauchemar|cauchemardesque": -2.8,
+    "piege": -2.8, "vol|voler|vole|volee": -2.5, "escroc|escroquerie": -3,
+    "abandon|desertion": -2.2, "rupture": -1.8, "solitude": -2, "vide": -1.5,
+    "desespoir|desespere|desesperee": -3, "detresse": -2.8, "accable|accablee": -2.5,
+    "epuisement": -2.2, "surmenage|surmene|surmenee": -2.2, "harcelant|harcelante": -2.5,
 })
 
 INTENSIFIERS = {
@@ -124,10 +148,20 @@ INTENSIFIERS = {
     "absolument": 1.7, "franchement": 1.3, "hyper": 1.5, "ultra": 1.5,
     "assez": 0.85, "plutot": 0.9, "peu": 0.5, "legerement": 0.6,
     "relativement": 0.8, "moyennement": 0.6,
+    # ── ajouts ──
+    "super": 1.4, "mega": 1.6, "giga": 1.7, "grave": 1.4, "carrement": 1.5,
+    "particulierement": 1.4, "incroyablement": 1.7, "parfaitement": 1.5,
+    "infiniment": 1.7, "profondement": 1.5, "sacrement": 1.4, "foutrement": 1.5,
+    "a peine": 0.4, "a peu pres": 0.7, "quelque peu": 0.6, "un peu": 0.6,
 }
 
-NEGATORS = {"pas", "jamais", "rien", "aucun", "aucune", "sans", "ni",
-            "nullement", "guere"}
+# Force de négation par mot : certains négateurs inversent plus franchement
+# le sentiment ("jamais", "aucun") que d'autres plus feutrés ("guère").
+NEGATORS: Dict[str, float] = {
+    "pas": 0.75, "jamais": 0.9, "rien": 0.85, "aucun": 0.85, "aucune": 0.85,
+    "sans": 0.7, "ni": 0.6, "nullement": 0.8, "guere": 0.55,
+    "point": 0.7,
+}
 CONTRAST = {"mais", "cependant", "pourtant", "toutefois", "neanmoins"}
 
 # Locutions dont le sens n'est pas la somme des mots
@@ -137,6 +171,11 @@ PHRASE_SUBS = {
     "pas fou": "mediocre", "pas ouf": "mediocre",
     "bien sur": "", "bien entendu": "", "bien que": "", "ou bien": "",
     "si bien": "",
+    "perte de temps": "inutile", "aux petits oignons": "genial",
+    "au top": "genial", "rien a dire": "impeccable", "au poil": "genial",
+    "la totale": "catastrophe", "un calvaire": "insupportable",
+    "un vrai bonheur": "bonheur", "un vrai plaisir": "plaisir",
+    "a des annees lumiere": "mediocre", "aux oubliettes": "abandonne",
 }
 
 EMOJI_SENT = {
@@ -164,6 +203,12 @@ EMOTION_LEX = {
     "surprise": ("wow waouh incroyable etonne etonnee surpris surprise choque "
                  "stupefait inattendu 😮 😲 😯 🤯").split(),
     "dégoût": ("degoute degoutant degoutante beurk ecoeure repugnant 🤢 🤮").split(),
+    "fierté": ("fier fiere fierte accompli accomplie reussi reussite victoire "
+               "triomphe exploit bravo felicitations 💪 🏆 🥇").split(),
+    "ennui": ("ennui ennuyeux ennuyeuse lassant lassante monotone monotonie "
+              "morose routine blase blasee soupir 😑 😴 🥱").split(),
+    "espoir": ("espoir espere esperer optimisme optimiste confiant confiante "
+               "avenir prometteur prometteuse renaissance renouveau 🤞 🌱 ✨").split(),
 }
 EMO_LOOKUP: Dict[str, List[str]] = {}
 for _emo, _words in EMOTION_LEX.items():
@@ -177,6 +222,14 @@ SARCASM_PHRASES = {
     "quelle idee": 0.3, "grand bien te fasse": 0.4,
     "bonne chance avec ca": 0.4, "non mais": 0.2, "ca alors": 0.2,
     "trop fort": 0.25, "on n'est pas sortis": 0.2, "decidement": 0.2,
+    # ── ajouts ──
+    "quelle chance": 0.4, "comme c'est original": 0.5, "quelle originalite": 0.5,
+    "bravo champion": 0.45, "bravo championne": 0.45, "quel exploit": 0.45,
+    "magnifique initiative": 0.4, "superbe idee": 0.35, "quelle classe": 0.35,
+    "je n'en reviens pas de ta competence": 0.5, "je n'en reviens pas de votre competence": 0.5,
+    "ca promet": 0.3, "ca commence bien": 0.35, "bien joue": 0.25,
+    "on applaudit": 0.4, "formidable vraiment": 0.4, "ravi ravi": 0.3,
+    "quelle efficacite": 0.4, "merci qui": 0.25,
 }
 
 # (regex sur texte normalisé, type, interprétation)
@@ -243,6 +296,24 @@ SUBTEXT_RULES: List[Tuple[str, str, str]] = [
     (r"\b(pas de nouvelles|tu ne reponds pas|pas de reponse|silence radio|tu m'ignores)\b",
      "Reproche d'absence",
      "Sentiment d'être ignoré ou négligé"),
+    (r"\b(sans vouloir te commander|je ne veux pas t'embeter mais|juste pour dire|"
+     r"c'est juste une remarque|je dis ca pour toi|je te le dis gentiment)",
+     "Critique désamorcée",
+     "Remarque présentée comme bienveillante pour en atténuer la portée"),
+    (r"\b(je ne suis pas (le seul|la seule) a (penser|dire|trouver)|tout le monde (pense|dit|trouve)|"
+     r"on est plusieurs a)\b",
+     "Appel à consensus",
+     "Cherche à légitimer une opinion personnelle en l'attribuant au collectif"),
+    (r"\b(c'est pas comme si|c'est pas comme si j'avais|comme si c'etait)\b",
+     "Minimisation rhétorique",
+     "Rabaisse l'importance d'un fait pour désamorcer une objection"),
+    (r"\b(je ne (vais|veux) pas (m'etendre|revenir) (la[-\s]dessus|dessus)|passons|"
+     r"n'en parlons plus|classons l'affaire)\b",
+     "Clôture forcée du sujet",
+     "Coupe court à la discussion, souvent pour éviter un sujet sensible"),
+    (r"\b(je plaisante|je rigole|c'est une blague|disons le serieusement)\b",
+     "Humour défensif",
+     "Peut servir à retirer la portée d'une critique après coup ('je rigole mais…')"),
 ]
 
 FORMAL = {"vous", "veuillez", "cordialement", "madame", "monsieur", "messieurs",
@@ -371,23 +442,48 @@ class SentimentAnalyzer:
     # ── lexique ────────────────────────────────────────────────────────────
     @staticmethod
     def _lex(tok: str) -> Optional[float]:
+        """Cherche `tok` dans le lexique, avec plusieurs niveaux de repli :
+        forme exacte, suffixes de pluriel/flexion, forme compressée (lettres
+        répétées, ex. 'trooop' -> 'trop'), puis suffixe adverbial '-ement'
+        ramené à l'adjectif ('incroyablement' -> 'incroyable')."""
         if tok in LEXICON:
             return LEXICON[tok]
-        if len(tok) > 3:
-            for suf in ("s", "x", "es"):
-                if tok.endswith(suf) and tok[:-len(suf)] in LEXICON:
-                    return LEXICON[tok[:-len(suf)]]
+
+        candidats = [tok]
+        compresse = compress_elongation(tok)
+        if compresse != tok:
+            candidats.append(compresse)
+
+        for cand in list(candidats):
+            if len(cand) > 3:
+                for suf in ("s", "x", "es"):
+                    if cand.endswith(suf) and cand[:-len(suf)] in LEXICON:
+                        return LEXICON[cand[:-len(suf)]]
+                if cand.endswith("ement") and len(cand) > 7:
+                    racine = cand[:-len("ement")]
+                    for forme in (racine, racine + "e"):
+                        if forme in LEXICON:
+                            return LEXICON[forme]
+
+        for cand in candidats:
+            if cand in LEXICON:
+                return LEXICON[cand]
         return None
 
     @staticmethod
-    def _is_negated(seg: List[str], i: int) -> bool:
-        window = seg[max(0, i - 3):i]
+    def _negation_strength(seg: List[str], i: int) -> float:
+        """Renvoie la force de négation applicable au token i (0.0 si aucune),
+        en cherchant dans une fenêtre de 4 tokens précédents (élargie par
+        rapport à la version précédente pour couvrir les tournures du type
+        « je ne pense vraiment pas que »)."""
+        window = seg[max(0, i - 4):i]
+        best = 0.0
         for j, t in enumerate(window):
             if t in NEGATORS:
-                return True
+                best = max(best, NEGATORS[t])
             if t == "plus" and any(x in ("ne", "n") for x in window[:j]):
-                return True
-        return False
+                best = max(best, 0.75)
+        return best
 
     # ── sentiment d'une phrase ─────────────────────────────────────────────
     def score_sentence(self, sent: str) -> Dict[str, Any]:
@@ -427,8 +523,9 @@ class SentimentAnalyzer:
                     continue
                 v = val * (mult if ttl else 1.0)
                 mult, ttl = 1.0, 0
-                if self._is_negated(seg, i):
-                    v *= -0.75
+                neg_strength = self._negation_strength(seg, i)
+                if neg_strength:
+                    v *= -neg_strength
                 if tok in caps:
                     v *= 1.3
                 v *= weight
@@ -562,6 +659,41 @@ class SentimentAnalyzer:
         }
 
     # ── analyse complète ───────────────────────────────────────────────────
+    # ── agrégation réutilisable (texte entier ou un paragraphe) ────────────
+    @staticmethod
+    def _weighted_aggregate(sents: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not sents:
+            return {"score": 0.0, "pos_mass": 0.0, "neg_mass": 0.0, "hits": 0, "tokens": 0}
+        weights = [0.3 if s["hits"] == 0 else 1 + min(s["hits"], 3) for s in sents]
+        score = sum(s["score"] * w for s, w in zip(sents, weights)) / sum(weights)
+        pos_mass = sum(abs(v) for s in sents for _, v in s["pos"])
+        neg_mass = sum(abs(v) for s in sents for _, v in s["neg"])
+        hits = sum(s["hits"] for s in sents)
+        tokens = sum(s["tokens"] for s in sents)
+        return {"score": score, "pos_mass": pos_mass, "neg_mass": neg_mass, "hits": hits, "tokens": tokens}
+
+    def paragraph_trajectory(self, text: str) -> List[Dict[str, Any]]:
+        """Découpe un texte long en paragraphes et calcule un score par
+        paragraphe : donne une vue d'ensemble exploitable sur un grand texte
+        sans avoir à lire un score par phrase (qui peut se compter par
+        centaines). N'est renvoyé que s'il y a au moins 2 paragraphes
+        substantiels (texte court : pas de valeur ajoutée)."""
+        paras = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip() and len(p.split()) >= 4]
+        if len(paras) < 2:
+            return []
+        out: List[Dict[str, Any]] = []
+        for idx, p in enumerate(paras, 1):
+            raw_s = [s.strip() for s in SENT_SPLIT_RE.split(p) if s.strip()] or [p]
+            sents_p = [self.score_sentence(s) for s in raw_s]
+            agg = self._weighted_aggregate(sents_p)
+            out.append({
+                "index": idx,
+                "score": round(agg["score"], 3),
+                "word_count": len(p.split()),
+                "excerpt": p if len(p) <= 140 else p[:137] + "…",
+            })
+        return out
+
     def analyze(self, text: str) -> Dict[str, Any]:
         if not text or not text.strip():
             return {"error": "Texte vide"}
@@ -571,16 +703,27 @@ class SentimentAnalyzer:
         sents = [self.score_sentence(s) for s in raw_sentences]
 
         # Agrégation pondérée (phrases neutres pèsent moins)
-        weights = [0.3 if s["hits"] == 0 else 1 + min(s["hits"], 3) for s in sents]
-        lex_score = sum(s["score"] * w for s, w in zip(sents, weights)) / sum(weights)
-        pos_mass = sum(abs(v) for s in sents for _, v in s["pos"])
-        neg_mass = sum(abs(v) for s in sents for _, v in s["neg"])
-        hits = sum(s["hits"] for s in sents)
-        n_tokens = max(1, sum(s["tokens"] for s in sents))
+        agg = self._weighted_aggregate(sents)
+        lex_score = agg["score"]
+        pos_mass = agg["pos_mass"]
+        neg_mass = agg["neg_mass"]
+        hits = agg["hits"]
+        n_tokens = max(1, agg["tokens"])
 
         mixed = (pos_mass >= 2 and neg_mass >= 2
                  and min(pos_mass, neg_mass) / max(pos_mass, neg_mass) >= 0.45
                  and abs(lex_score) < 0.5)
+
+        # Cohérence inter-phrases : un texte long où toutes les phrases vont
+        # dans le même sens mérite plus de confiance qu'un texte où le score
+        # ne tient qu'à une ou deux phrases contradictoires.
+        signal_scores = [s["score"] for s in sents if s["hits"] > 0]
+        if len(signal_scores) >= 2:
+            mean_s = sum(signal_scores) / len(signal_scores)
+            var_s = sum((x - mean_s) ** 2 for x in signal_scores) / len(signal_scores)
+            consistency = max(0.0, 1.0 - math.sqrt(var_s))
+        else:
+            consistency = 0.5
 
         emotions = self.detect_emotions(text)
         sarcasm = self.detect_sarcasm(text, sents)

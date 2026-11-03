@@ -1,0 +1,8 @@
+══ FLASH ESPTOOL · ✘ ÉCHEC ══
+Durée            : 8.4 s
+Carte            : ESP32-S2 · Flipper WiFi Dev Board  (esp32:esp32:esp32s2:CDCOnBoot=cdc)
+Port             : /dev/ttyACM1
+
+── DIAGNOSTIC ──
+Erreur esptool   : Failed to connect to Espressif device: No serial data received.
+→ La puce ne répond pas : maintenez BOOT, appuyez sur RESET, relâchez BOOT, puis relancez (ou essayez un autre câble / port).
